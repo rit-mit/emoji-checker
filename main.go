@@ -155,7 +155,7 @@ func slackHandler(header http.Header, body []byte) (Response, error) {
 			}
 		// Note: 絵文字の変更
 		case *slackevents.EmojiChangedEvent:
-			channelId := "CH10MJSNQ" // Note: bot-test
+			channelId := os.Getenv("NOTIFY_CHANNEL")
 
 			name := event.Name
 			message := name + " :" + name + ": が追加されました！"

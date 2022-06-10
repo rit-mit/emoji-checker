@@ -165,6 +165,18 @@ func slackHandler(header http.Header, body []byte) (Response, error) {
 				response.StatusCode = http.StatusInternalServerError
 				return response, errors.New("bad request")
 			}
+		// Note: チャンネルの追加
+		case *slackevents.ChannelCreatedEvent:
+			channelId := os.Getenv("NOTIFY_CHANNEL")
+
+			newChannelId := event.Channel.ID
+
+			message := "新しいチャンネル <" + newChannelId + "> が追加されました！"
+			if _, _, err := api.PostMessage(channelId, slack.MsgOptionText(message, false)); err != nil {
+				log.Println(err)
+				response.StatusCode = http.StatusInternalServerError
+				return response, errors.New("bad request")
+			}
 		}
 	}
 

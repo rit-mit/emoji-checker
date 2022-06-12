@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"emoji-checker/dcreader"
 	"encoding/json"
 	"errors"
 	"io/ioutil"
@@ -37,7 +38,7 @@ func lambdaHandler(ctx context.Context, request Request) (Response, error) {
 		response := Response{
 			StatusCode: http.StatusInternalServerError,
 			Body:       "not invoked from aws lambda",
-			// Headers:    map[string]string{},
+			Headers:    map[string]string{},
 		}
 		return response, errors.New("verify error")
 	} else {
@@ -51,6 +52,7 @@ func lambdaHandler(ctx context.Context, request Request) (Response, error) {
 
 // Note: ローカルでの確認用
 func httpHandler() {
+	// ex) https://hogehoge.jp.ngrok.io/slack/events
 	http.HandleFunc("/slack/events", func(w http.ResponseWriter, r *http.Request) {
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
@@ -95,17 +97,15 @@ func slackHandler(header http.Header, body []byte) (Response, error) {
 		response.StatusCode = http.StatusInternalServerError
 		return response, errors.New("verify error")
 	}
-
-	// log.Println(body)
 	if _, err := verifier.Write(body); err != nil {
 		response.StatusCode = http.StatusInternalServerError
-		return response, errors.New("bad request")
+		return response, errors.New("verify error: Write")
 	}
 
 	if err := verifier.Ensure(); err != nil {
 		log.Println(err)
 		response.StatusCode = http.StatusBadRequest
-		return response, errors.New("bad request")
+		return response, errors.New("verify error: Ensure")
 	}
 
 	////////// end Verify
@@ -116,7 +116,7 @@ func slackHandler(header http.Header, body []byte) (Response, error) {
 	if err != nil {
 		log.Println(err)
 		response.StatusCode = http.StatusInternalServerError
-		return response, errors.New("internal server error")
+		return response, errors.New("internal server error: ParseEvent")
 	}
 
 	switch eventsAPIEvent.Type {
@@ -126,7 +126,7 @@ func slackHandler(header http.Header, body []byte) (Response, error) {
 		if err := json.Unmarshal([]byte(body), &res); err != nil {
 			log.Println(err)
 			response.StatusCode = http.StatusInternalServerError
-			return response, errors.New("internal server error")
+			return response, errors.New("internal server error: json.Unmarshal")
 		}
 		response.Headers["Content-Type"] = "text/plain"
 		response.Body = res.Challenge
@@ -139,20 +139,26 @@ func slackHandler(header http.Header, body []byte) (Response, error) {
 			message := strings.Split(event.Text, " ")
 			if len(message) < 2 {
 				response.StatusCode = http.StatusBadRequest
-				return response, errors.New("bad request")
+				return response, errors.New("bad request: strings.Split")
 			}
 
 			command := message[1]
-			log.Println(command)
-			switch command {
-			// Note: pingとメンションすとpongを答える
-			case "ping":
+
+			// テスト用
+			if command == "ping" {
 				if _, _, err := api.PostMessage(event.Channel, slack.MsgOptionText("pong", false)); err != nil {
 					log.Println(err)
 					response.StatusCode = http.StatusInternalServerError
-					return response, errors.New("bad request")
+					return response, errors.New("bad request: AppMentionEvent.PostMessage")
 				}
 			}
+
+			// Docbaseから読み込んで通知する
+			dcDomain := os.Getenv("DOCBASE_DOMAIN")
+			if strings.Contains(command, "https://"+dcDomain+".docbase.io/posts/") {
+				dcreader.Call(command, event.Channel)
+			}
+
 		// Note: 絵文字の変更
 		case *slackevents.EmojiChangedEvent:
 			channelId := os.Getenv("NOTIFY_CHANNEL")
@@ -163,7 +169,7 @@ func slackHandler(header http.Header, body []byte) (Response, error) {
 			if _, _, err := api.PostMessage(channelId, slack.MsgOptionText(message, false)); err != nil {
 				log.Println(err)
 				response.StatusCode = http.StatusInternalServerError
-				return response, errors.New("bad request")
+				return response, errors.New("bad request: EmojiChangedEvent.PostMessage")
 			}
 		// Note: チャンネルの追加
 		case *slackevents.ChannelCreatedEvent:
@@ -175,7 +181,7 @@ func slackHandler(header http.Header, body []byte) (Response, error) {
 			if _, _, err := api.PostMessage(channelId, slack.MsgOptionText(message, false)); err != nil {
 				log.Println(err)
 				response.StatusCode = http.StatusInternalServerError
-				return response, errors.New("bad request")
+				return response, errors.New("bad request: ChannelCreatedEvent.PostMessage")
 			}
 		}
 	}

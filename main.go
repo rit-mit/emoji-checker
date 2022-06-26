@@ -136,13 +136,7 @@ func slackHandler(header http.Header, body []byte) (Response, error) {
 		switch event := innerEvent.Data.(type) {
 		// Note: アプリにメンションする
 		case *slackevents.AppMentionEvent:
-			message := strings.Split(event.Text, " ")
-			if len(message) < 2 {
-				response.StatusCode = http.StatusBadRequest
-				return response, errors.New("bad request: strings.Split")
-			}
-
-			command := message[1]
+			command := convNewline(event.Text, " ")
 
 			// テスト用
 			if command == "ping" {
@@ -187,6 +181,20 @@ func slackHandler(header http.Header, body []byte) (Response, error) {
 	}
 
 	return response, nil
+}
+
+func convNewline(str, nlcode string) string {
+	result := strings.NewReplacer(
+		"\r\n", nlcode,
+		"\r", nlcode,
+		"\n", nlcode,
+	).Replace(str)
+	result = strings.TrimLeft(result, " ")
+	result = strings.TrimLeft(result, nlcode)
+	result = strings.TrimRight(result, nlcode)
+	result = strings.TrimRight(result, " ")
+
+	return result
 }
 
 func main() {
